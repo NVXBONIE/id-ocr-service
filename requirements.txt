@@ -1,9 +1,20 @@
+# Option 1: Updated requirements.txt with compatible versions
 easyocr==1.7.0
-opencv-python-headless==4.8.1.78
-numpy==1.24.3
-flask==2.3.3
-Pillow==10.0.1
-torch==2.0.1+cpu
-torchvision==0.15.2+cpu
+opencv-python-headless==4.10.0.84
+numpy>=1.24.0,<2.0.0
+flask==3.0.0
+Pillow==10.2.0
+torch==2.1.0+cpu --index-url https://download.pytorch.org/whl/cpu
+torchvision==0.16.0+cpu --index-url https://download.pytorch.org/whl/cpu
 gunicorn==21.2.0
 setuptools>=65.0.0
+
+# Option 2: Simplified requirements (let pip resolve versions)
+# easyocr
+# opencv-python-headless
+# numpy
+# flask
+# Pillow
+# torch --index-url https://download.pytorch.org/whl/cpu
+# torchvision --index-url https://download.pytorch.org/whl/cpu
+# gunicorn
