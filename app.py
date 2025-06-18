@@ -1,4 +1,5 @@
 import easyocr
+import os
 import cv2
 import numpy as np
 from flask import Flask, request, jsonify
@@ -240,4 +241,5 @@ def root():
     })
 
 if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0', port=8002)
+    port = int(os.environ.get('PORT', 8002))
+    app.run(debug=False, host='0.0.0.0', port=port)
