@@ -1,15 +1,10 @@
+import gradio as gr
 import easyocr
-import os
 import cv2
 import numpy as np
-from flask import Flask, request, jsonify
 import re
 from datetime import datetime
-import base64
-from io import BytesIO
 from PIL import Image
-
-app = Flask(__name__)
 
 # Initialize EasyOCR reader for Romanian and English
 reader = easyocr.Reader(['ro', 'en'])
@@ -156,90 +151,142 @@ class RomanianIDParser:
 # Initialize parser
 id_parser = RomanianIDParser()
 
-@app.route('/extract-romanian-id', methods=['POST'])
-def extract_romanian_id():
+def process_romanian_id(image):
     """
-    Endpoint to extract data from Romanian ID card image
-    
-    Expected input:
-    - JSON with base64 encoded image: {"image": "base64_string"}
-    - OR multipart/form-data with image file
-    
-    Returns:
-    - JSON with extracted fields
+    Main function for Gradio interface
+    Takes an image and returns extracted Romanian ID data
     """
     try:
-        image = None
+        if image is None:
+            return {
+                "error": "No image provided",
+                "success": False,
+                "timestamp": datetime.now().isoformat()
+            }
         
-        # Handle different input formats
-        if request.is_json:
-            data = request.get_json()
-            if 'image' not in data:
-                return jsonify({'error': 'No image provided in JSON'}), 400
-            
-            # Decode base64 image
-            image_data = base64.b64decode(data['image'])
-            image = np.array(Image.open(BytesIO(image_data)))
-            
-        elif 'image' in request.files:
-            # Handle multipart form data
-            file = request.files['image']
-            if file.filename == '':
-                return jsonify({'error': 'No image file selected'}), 400
-            
-            # Convert uploaded file to numpy array
-            image = np.array(Image.open(file.stream))
-        
-        else:
-            return jsonify({'error': 'No image provided. Send as JSON with base64 or as multipart form data'}), 400
+        # Convert PIL image to numpy array if needed
+        if isinstance(image, Image.Image):
+            image = np.array(image)
         
         # Extract data from Romanian ID
         extracted_data = id_parser.parse_romanian_id(image)
         
-        # Add metadata
-        response_data = {
-            'success': True,
-            'extracted_data': extracted_data,
-            'timestamp': datetime.now().isoformat(),
-            'fields_found': sum(1 for value in extracted_data.values() if value is not None)
+        # Format response for better display
+        response = {
+            "success": True,
+            "extracted_data": extracted_data,
+            "timestamp": datetime.now().isoformat(),
+            "fields_found": sum(1 for value in extracted_data.values() if value is not None)
         }
         
-        return jsonify(response_data)
+        return response
         
     except Exception as e:
-        return jsonify({
-            'success': False,
-            'error': str(e),
-            'timestamp': datetime.now().isoformat()
-        }), 500
-
-@app.route('/health', methods=['GET'])
-def health_check():
-    """Health check endpoint"""
-    return jsonify({
-        'status': 'healthy',
-        'service': 'Romanian ID OCR Service',
-        'timestamp': datetime.now().isoformat()
-    })
-
-@app.route('/', methods=['GET'])
-def root():
-    """Root endpoint with API information"""
-    return jsonify({
-        'service': 'Romanian ID OCR Service',
-        'version': '1.0.0',
-        'endpoints': {
-            '/extract-romanian-id': 'POST - Extract data from Romanian ID card',
-            '/health': 'GET - Health check'
-        },
-        'usage': {
-            'method': 'POST',
-            'content_type': 'application/json or multipart/form-data',
-            'input_json': {'image': 'base64_encoded_image_string'},
-            'input_form': 'image file in multipart form data'
+        return {
+            "success": False,
+            "error": str(e),
+            "timestamp": datetime.now().isoformat()
         }
-    })
 
-if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 8002))
-    app.run(debug=False, host='0.0.0.0', port=port)
+def format_output_for_display(result):
+    """Format the result for better display in Gradio"""
+    if not result.get("success", False):
+        return f"❌ Error: {result.get('error', 'Unknown error')}"
+    
+    extracted = result.get("extracted_data", {})
+    fields_found = result.get("fields_found", 0)
+    
+    output = f"✅ Successfully extracted {fields_found} fields:\n\n"
+    
+    field_labels = {
+        'nume': '👤 Nume (Last Name)',
+        'prenume': '👤 Prenume (First Name)', 
+        'cnp': '🆔 CNP',
+        'serie': '📄 Serie',
+        'cetatenie': '🌍 Cetățenie (Nationality)',
+        'loc_nastere': '📍 Loc Naștere (Place of Birth)',
+        'domiciliu': '🏠 Domiciliu (Address)',
+        'emisa_de': '🏛️ Emisă de (Issued by)',
+        'valabilitate': '📅 Valabilitate (Valid until)'
+    }
+    
+    for field, value in extracted.items():
+        label = field_labels.get(field, field.title())
+        if value:
+            output += f"{label}: {value}\n"
+        else:
+            output += f"{label}: ❌ Not found\n"
+    
+    return output
+
+# Create Gradio interface
+with gr.Blocks(title="Romanian ID OCR", theme=gr.themes.Soft()) as demo:
+    gr.Markdown("""
+    # 🇷🇴 Romanian ID Card OCR
+    
+    Upload an image of a Romanian ID card to extract text data automatically.
+    This service can extract: Name, CNP, Serie, Nationality, Address, and more.
+    
+    **Supported formats**: JPG, PNG, WEBP
+    """)
+    
+    with gr.Row():
+        with gr.Column():
+            image_input = gr.Image(
+                label="Upload Romanian ID Card Image",
+                type="pil",
+                sources=["upload", "clipboard"]
+            )
+            
+            extract_btn = gr.Button("🔍 Extract Data", variant="primary", size="lg")
+            
+        with gr.Column():
+            # JSON output for API usage
+            json_output = gr.JSON(
+                label="📋 Extracted Data (JSON)",
+                visible=True
+            )
+            
+            # Formatted text output for human reading
+            text_output = gr.Textbox(
+                label="📝 Formatted Results",
+                lines=15,
+                max_lines=20,
+                visible=True
+            )
+    
+    # Example images section
+    gr.Markdown("### 📝 Usage Notes:")
+    gr.Markdown("""
+    - For best results, ensure the ID card is well-lit and clearly visible
+    - The image should be as straight as possible (not tilted)
+    - Higher resolution images generally produce better results
+    - This app supports both Romanian and English text recognition
+    """)
+    
+    # Event handlers
+    def process_and_format(image):
+        result = process_romanian_id(image)
+        formatted = format_output_for_display(result)
+        return result, formatted
+    
+    extract_btn.click(
+        fn=process_and_format,
+        inputs=[image_input],
+        outputs=[json_output, text_output]
+    )
+    
+    # Auto-process when image is uploaded
+    image_input.change(
+        fn=process_and_format,
+        inputs=[image_input],
+        outputs=[json_output, text_output]
+    )
+
+# Launch the app
+if __name__ == "__main__":
+    demo.launch(
+        server_name="0.0.0.0",
+        server_port=7860,
+        share=False
+    )
